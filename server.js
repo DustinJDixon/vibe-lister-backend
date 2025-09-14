@@ -99,7 +99,7 @@ app.post("/generate-playlist", async (req, res) => {
 // Spotify OAuth endpoints
 app.get("/auth/spotify", (req, res) => {
   const scopes = "playlist-modify-public playlist-modify-private";
-  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || "http://127.0.0.1:3000";
+  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || "https://vibe-lister-ui.onrender.com";
   const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${process.env.SPOTIFY_CLIENT_ID}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   res.json({ authUrl });
 });
@@ -107,7 +107,7 @@ app.get("/auth/spotify", (req, res) => {
 app.post("/auth/callback", async (req, res) => {
   try {
     const { code } = req.body;
-    const redirectUri = process.env.SPOTIFY_REDIRECT_URI || "http://127.0.0.1:3000";
+    const redirectUri = process.env.SPOTIFY_REDIRECT_URI || "https://vibe-lister-ui.onrender.com";
     
     const tokenResponse = await axios.post(
       "https://accounts.spotify.com/api/token",
