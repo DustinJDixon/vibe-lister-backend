@@ -100,9 +100,7 @@ app.post("/generate-playlist", async (req, res) => {
 app.get("/auth/spotify", (req, res) => {
   const scopes = "playlist-modify-public playlist-modify-private";
   const platform = req.query.platform || 'web';
-  const redirectUri = platform === 'flutter' 
-    ? 'http://localhost:3000/?platform=flutter' 
-    : (process.env.SPOTIFY_REDIRECT_URI || "https://vibe-lister-ui.onrender.com");
+  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || "https://vibe-lister-ui.onrender.com";
   const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${process.env.SPOTIFY_CLIENT_ID}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   res.json({ authUrl });
 });
@@ -137,9 +135,7 @@ app.post("/auth/device-code", async (req, res) => {
 app.post("/auth/callback", async (req, res) => {
   try {
     const { code, platform } = req.body;
-    const redirectUri = platform === 'flutter' 
-      ? 'http://localhost:3000/?platform=flutter' 
-      : (process.env.SPOTIFY_REDIRECT_URI || "https://vibe-lister-ui.onrender.com");
+    const redirectUri = process.env.SPOTIFY_REDIRECT_URI || "https://vibe-lister-ui.onrender.com";
     
     const tokenResponse = await axios.post(
       "https://accounts.spotify.com/api/token",
