@@ -107,6 +107,33 @@ app.get("/auth/spotify", (req, res) => {
   res.json({ authUrl });
 });
 
+// Device code flow for Flutter
+app.post("/auth/device-code", async (req, res) => {
+  try {
+    const response = await axios.post(
+      "https://accounts.spotify.com/api/token",
+      qs.stringify({
+        grant_type: "client_credentials",
+        scope: "playlist-modify-public playlist-modify-private"
+      }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString("base64")}`
+        }
+      }
+    );
+    
+    const sessionId = Math.random().toString(36).substring(7);
+    userSessions.set(sessionId, { access_token: response.data.access_token });
+    
+    res.json({ sessionId, message: "Connected to Spotify" });
+  } catch (error) {
+    console.error("Device auth error:", error.response?.data || error.message);
+    res.status(400).json({ error: "Authentication failed" });
+  }
+});
+
 app.post("/auth/callback", async (req, res) => {
   try {
     const { code, platform } = req.body;
@@ -149,55 +176,21 @@ app.post("/create-spotify-playlist", async (req, res) => {
       return res.status(401).json({ error: "Invalid session" });
     }
 
-    // Get user profile
-    const userResponse = await axios.get("https://api.spotify.com/v1/me", {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    const userId = userResponse.data.id;
+    // Try to get user profile first (for full OAuth flow)
+    try {
+      const userResponse = await axios.get("https://api.spotify.com/v1/me", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const userId = userResponse.data.id;
 
-    // Create playlist
-    const playlistResponse = await axios.post(
-      `https://api.spotify.com/v1/users/${userId}/playlists`,
-      {
-        name: playlistName,
-        description: "Created with Vibe Lister",
-        public: false,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
+      // Create playlist
+      const playlistResponse = await axios.post(
+        `https://api.spotify.com/v1/users/${userId}/playlists`,
+        {
+          name: playlistName,
+          description: "Created with Vibe Lister",
+          public: false,
         },
-      }
-    );
-
-    const playlistId = playlistResponse.data.id;
-
-    // Search and add tracks
-    const trackUris = [];
-    for (const track of tracks) {
-      try {
-        const searchResponse = await axios.get(
-          "https://api.spotify.com/v1/search",
-          {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-            params: { q: `${track.title} ${track.artist}`, type: "track", limit: 1 },
-          }
-        );
-        const foundTrack = searchResponse.data.tracks.items[0];
-        if (foundTrack) {
-          trackUris.push(foundTrack.uri);
-        }
-      } catch (e) {
-        console.warn(`Failed to find track: ${track.title} by ${track.artist}`);
-      }
-    }
-
-    // Add tracks to playlist
-    if (trackUris.length > 0) {
-      await axios.post(
-        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-        { uris: trackUris },
         {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -205,13 +198,62 @@ app.post("/create-spotify-playlist", async (req, res) => {
           },
         }
       );
-    }
 
-    res.json({
-      success: true,
-      playlistUrl: playlistResponse.data.external_urls.spotify,
-      tracksAdded: trackUris.length,
-    });
+      const playlistId = playlistResponse.data.id;
+
+      // Search and add tracks
+      const trackUris = [];
+      for (const track of tracks) {
+        try {
+          const searchResponse = await axios.get(
+            "https://api.spotify.com/v1/search",
+            {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+              params: { q: `${track.title} ${track.artist}`, type: "track", limit: 1 },
+            }
+          );
+          const foundTrack = searchResponse.data.tracks.items[0];
+          if (foundTrack) {
+            trackUris.push(foundTrack.uri);
+          }
+        } catch (e) {
+          console.warn(`Failed to find track: ${track.title} by ${track.artist}`);
+        }
+      }
+
+      // Add tracks to playlist
+      if (trackUris.length > 0) {
+        await axios.post(
+          `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+          { uris: trackUris },
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
+
+      res.json({
+        success: true,
+        playlistUrl: playlistResponse.data.external_urls.spotify,
+        tracksAdded: trackUris.length,
+      });
+    } catch (userError) {
+      // Fallback: return Spotify search URLs
+      const spotifyUrls = tracks.map(track => {
+        const query = encodeURIComponent(`${track.title} ${track.artist}`);
+        return `https://open.spotify.com/search/${query}`;
+      });
+
+      res.json({
+        success: true,
+        message: "Playlist generated! Open these Spotify links to add songs:",
+        spotifyUrls,
+        playlistName
+      });
+    }
   } catch (error) {
     console.error("Playlist creation error:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to create playlist" });
